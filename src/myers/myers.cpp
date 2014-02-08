@@ -206,8 +206,7 @@ static int myersCalcEditDistanceSemiGlobal(Word* P, Word* M, int* score, Word** 
             P[b] = (Word)-1; // All 1s
             M[b] = (Word)0;
             score[b] = score[b-1] - hout + WORD_SIZE + calculateBlock(P[b], M[b], Peq_c[b], hout, P[b], M[b]);
-        }
-        else {
+        } else {
             while (lastBlock > 0 && score[lastBlock-1] >= k + WORD_SIZE)
                 lastBlock--;
         }
@@ -228,6 +227,7 @@ static int myersCalcEditDistanceSemiGlobal(Word* P, Word* M, int* score, Word** 
                 if (bestScore == -1 || colScore < bestScore) {
                     bestScore = colScore;
                     position = c - W;
+                    k = bestScore - 1; // Change k so we will look only for better scores then the best found so far.
                 }
             }
         }
@@ -277,9 +277,7 @@ static int myersCalcEditDistanceNW(Word* P, Word* M, int* score, Word** Peq, int
         }
         //------------------------------------------------------------------//
         
-        //---------- Adjust number of blocks according to Ukkonen ----------//
-        // TODO: Fix constraints for reducing the last block!
-        
+        //---------- Adjust number of blocks according to Ukkonen ----------//        
         // Adjust first block
           if (score[firstBlock] >= k + WORD_SIZE) // TODO: put some stronger constraint
             firstBlock++;
@@ -296,13 +294,10 @@ static int myersCalcEditDistanceNW(Word* P, Word* M, int* score, Word** Peq, int
             P[b] = (Word)-1; // All 1s
             M[b] = (Word)0;
             score[b] = score[b-1] - hout + WORD_SIZE + calculateBlock(P[b], M[b], Peq_c[b], hout, P[b], M[b]);
-        } /*else {
-            while (lastBlock > 0
-                   && score[lastBlock-1] >= k - max(0, targetLength - (c + 1))
-                   - max(0, queryLength - (lastBlock * WORD_SIZE)) + WORD_SIZE) {
+        } else {
+            while (lastBlock > 0 && score[lastBlock-1] >= k + WORD_SIZE) // TODO: put some stronger constraint
                 lastBlock--;
-            }
-            }*/
+        }
 
         // If band stops to exist finish
         if (lastBlock <= firstBlock) {
@@ -331,7 +326,6 @@ static int myersCalcEditDistanceNW(Word* P, Word* M, int* score, Word** Peq, int
             return MYERS_STATUS_OK;
         }
     }
-
     
     *bestScore_ = *position_ = -1;
     return MYERS_STATUS_OK;

@@ -3,6 +3,9 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <pthread.h>
+#include <semaphore.h>
+
 #include "myers/myers.h"
 
 #include "overlapper.hpp"
@@ -62,96 +65,23 @@ void preprocess_overlaps(fragments_map *fragments, reads_sequence reads_seq, int
 		}
 }
 
-void get_final_overlaps(overlaps_map *overlaps, fragments_map fragments, const read_data *reads, float threshold) {
-	for (auto it = fragments.begin(); it != fragments.end(); it++) {
-			int_pair indices = it->first;
-	
-			int ind1 = indices.first;
-			int ind2 = indices.second;
+void get_final_overlaps(overlaps_map *overlaps, fragments_map *fragments, const read_data *reads, float threshold, int threads_no) {
+	thread_data data;
 
-			fragment f = it->second;
+	data.overlaps = overlaps;
+	data.fragments = fragments;
+	data.reads = reads;
+	data.threshold = threshold;
 
-			int s1 = f.s1;
-			int s2 = f.s2;
-			int len = f.len;
+	pthread_t threads[threads_no];
 
-			int e1 = s1 + f.len;
-			int e2 = s2 + f.len;
+	for (int i = 0; i < threads_no; i++) {
+		pthread_create(&threads[i], NULL, process_overlap, (void*) (&data));
+	}
 
-			overlap o;
-
-			o.len1 = o.len2 = len;
-			o.edist = 0;
-
-			const unsigned char *seq1, *seq2;
-			int len1, len2;
-			int edist, end;
-
-			len1 = reads[ind1].length - e1;
-			len2 = reads[ind2].length - e2;
-
-			if (len1 != 0 && len2 != 0) {
-				seq1 = reads[ind1].sequence + e1;
-				seq2 = reads[ind2].sequence + e2;
-
-				if (len1 < len2) {
-					myersCalcEditDistance(seq1, len1, seq2, len2, 4, edist_k(len1), MYERS_MODE_SHW, &edist, &end);
-					o.len1 += len1;
-					o.len2 += end + 1;
-				} else {
-					myersCalcEditDistance(seq2, len2, seq1, len1, 4, edist_k(len2), MYERS_MODE_SHW, &edist, &end);
-					o.len1 += end + 1;
-					o.len2 += len2;
-				}
-
-				if (edist == -1) {
-					continue;
-				}
-
-				o.edist += edist;
-			}
-
-			len1 = s1;
-			len2 = s2;
-
-			if (len1 != 0 && len2 != 0) {
-				seq1 = reads[ind1].reversed + reads[ind1].length - s1;
-				seq2 = reads[ind2].reversed + reads[ind2].length - s2;
-
-				if (len1 < len2) {
-					myersCalcEditDistance(seq1, len1, seq2, len2, 4, edist_k(len1), MYERS_MODE_SHW, &edist, &end);
-					o.len1 += len1;
-					o.len2 += end + 1;
-
-					if (end + 1 <= len2) {
-						o.type = "EB";
-					} else {
-						o.type = "BE";
-					}
-				} else {
-					myersCalcEditDistance(seq2, len2, seq1, len1, 4, edist_k(len2), MYERS_MODE_SHW, &edist, &end);
-					o.len1 += end + 1;
-					o.len2 += len2;
-
-					if (end + 1 <= len1) {
-						o.type = "EB";
-					} else {
-						o.type = "BE";
-					}
-				}
-
-				if (edist == -1)
-					continue;
-
-				o.edist += edist;
-			}
-
-			if (o.edist / ((o.len1 + o.len2) / 2.0) < threshold) {
-				int_pair ids = std::make_pair(reads[ind1].id, reads[ind2].id);
-
-				overlaps->insert(std::make_pair(ids, o));
-			}
-		}
+	for (int i = 0; i < threads_no; i++) {
+		pthread_join(threads[i], NULL);
+	}
 }
 
 void save_final_overlaps(overlaps_map overlaps, const char *filename) {
@@ -233,4 +163,128 @@ void evaluate(overlaps_map final_overlaps, overlaps_map true_overlaps, int reads
 	printf("Precision: %.2f%%\n", precision * 100);
 	printf("Recall: %.2f%%\n", recall * 100);
 	printf("F1 score: %.2f%%\n", f1 * 100);
+}
+
+static void* process_overlap(void *arg) {
+	thread_data* data = (thread_data*) arg;
+
+	overlaps_map *overlaps = data->overlaps;
+	fragments_map *fragments = data->fragments;
+	const read_data *reads = data->reads;
+	float threshold = data->threshold;
+
+	sem_t *fragments_sem = sem_open("fragments_sem", O_CREAT, S_IRWXU, 1);
+	sem_t *overlaps_sem = sem_open("overlaps_sem", O_CREAT, S_IRWXU, 1);
+
+	while (true) {
+		sem_wait(fragments_sem);
+
+			if (fragments->empty()) {
+				sem_post(fragments_sem);
+
+				sem_close(fragments_sem);
+				sem_close(overlaps_sem);
+
+				return NULL;
+			}
+
+			auto it = fragments->begin();
+
+			int_pair indices = it->first;
+
+			int ind1 = indices.first;
+			int ind2 = indices.second;
+
+			fragment f = it->second;
+
+			int s1 = f.s1;
+			int s2 = f.s2;
+			int len = f.len;
+
+			fragments->erase(it);
+
+		sem_post(fragments_sem);
+
+		int e1 = s1 + len;
+		int e2 = s2 + len;
+
+		overlap o;
+
+		o.len1 = o.len2 = len;
+		o.edist = 0;
+
+		const unsigned char *seq1, *seq2;
+		int len1, len2;
+		int edist, end;
+
+		len1 = reads[ind1].length - e1;
+		len2 = reads[ind2].length - e2;
+
+		if (len1 != 0 && len2 != 0) {
+			seq1 = reads[ind1].sequence + e1;
+			seq2 = reads[ind2].sequence + e2;
+
+			if (len1 < len2) {
+				myersCalcEditDistance(seq1, len1, seq2, len2, 4, edist_k(len1), MYERS_MODE_SHW, &edist, &end);
+				o.len1 += len1;
+				o.len2 += end + 1;
+			} else {
+				myersCalcEditDistance(seq2, len2, seq1, len1, 4, edist_k(len2), MYERS_MODE_SHW, &edist, &end);
+				o.len1 += end + 1;
+				o.len2 += len2;
+			}
+
+			if (edist == -1)
+				continue;
+
+			o.edist += edist;
+		}
+
+		len1 = s1;
+		len2 = s2;
+
+		if (len1 != 0 && len2 != 0) {
+			seq1 = reads[ind1].reversed + reads[ind1].length - s1;
+			seq2 = reads[ind2].reversed + reads[ind2].length - s2;
+
+			if (len1 < len2) {
+				myersCalcEditDistance(seq1, len1, seq2, len2, 4, edist_k(len1), MYERS_MODE_SHW, &edist, &end);
+				o.len1 += len1;
+				o.len2 += end + 1;
+
+				if (end + 1 <= len2) {
+					o.type = "EB";
+				} else {
+					o.type = "BE";
+				}
+			} else {
+				myersCalcEditDistance(seq2, len2, seq1, len1, 4, edist_k(len2), MYERS_MODE_SHW, &edist, &end);
+				o.len1 += end + 1;
+				o.len2 += len2;
+
+				if (end + 1 <= len1) {
+					o.type = "EB";
+				} else {
+					o.type = "BE";
+				}
+			}
+
+			if (edist == -1)
+				continue;
+
+			o.edist += edist;
+		}
+
+		if (o.edist / ((o.len1 + o.len2) / 2.0) < threshold) {
+			int_pair ids = std::make_pair(reads[ind1].id, reads[ind2].id);
+
+			sem_wait(overlaps_sem);
+
+			overlaps->insert(std::make_pair(ids, o));
+
+			sem_post(overlaps_sem);
+		}
+	}
+
+	return NULL;
 }

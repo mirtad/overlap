@@ -11,9 +11,9 @@ Running
 
 To run the overlapper type:
 
-./overlap READS_FILE OUTPUT_FILE
+./overlap READS_FILE OUTPUT_FILE THREADS_NO
 
-e.g. ./overlap ../reads/ecoli_500.fasta ecoli_500.out
+e.g. ./overlap ../reads/ecoli_500.fasta ecoli_500.out 4
 
 You can run the suffix array and longest common prefix array check by typing:
 

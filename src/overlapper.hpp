@@ -28,7 +28,7 @@ typedef std::unordered_map<int_pair, fragment, int_pair_hash> fragments_map;
 typedef std::map<int_pair, overlap> overlaps_map;
 
 void preprocess_overlaps(fragments_map *fragments, reads_sequence reads_seq, int reads_seq_len, const int *SA, const int *LCP, int threshold);
-void get_final_overlaps(overlaps_map *overlaps, fragments_map fragments, const read_data *reads, float threshold);
+void get_final_overlaps(overlaps_map *overlaps, fragments_map *fragments, const read_data *reads, float threshold, int threads_no);
 void save_final_overlaps(overlaps_map overlaps, const char *filename);
 
 void get_true_overlaps(overlaps_map *overlaps, const read_data *reads, int reads_cnt);
@@ -39,6 +39,15 @@ void evaluate(overlaps_map final_overlaps, overlaps_map true_overlaps, int reads
 
 #define OVERLAP_LEN_THR 15
 #define K_LEN_THR 20
+
+typedef struct {
+	overlaps_map *overlaps;
+	fragments_map *fragments;
+	const read_data *reads;
+	float threshold;
+} thread_data;
+
+static void* process_overlap(void *arg);
 
 #endif
 

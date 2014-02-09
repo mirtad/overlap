@@ -5,6 +5,7 @@
 
 #include <pthread.h>
 #include <semaphore.h>
+#include <fcntl.h>
 
 #include "myers/myers.h"
 

@@ -4,7 +4,7 @@ CFLAGS = -std=c++11 -O3 -Wall
 all: overlap sa_lcp_test
 
 overlap: io.o sais.o lcp.o overlapper.o myers.o main.o
-	$(CC) $(CFLAGS) -lm io.o sais.o lcp.o overlapper.o myers.o main.o -o overlap
+	$(CC) $(CFLAGS) -lm -pthread io.o sais.o lcp.o overlapper.o myers.o main.o -o overlap
 
 sa_lcp_test: io.o sais.o lcp.o sa_lcp_test.o
 	$(CC) $(CFLAGS) -lm io.o sais.o lcp.o sa_lcp_test.o -o sa_lcp_test
